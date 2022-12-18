@@ -1,12 +1,17 @@
-// npm i formidable csv-parser
+// npm i formidable csv-parser pg
 
 const http = require('http');
 const formidable = require('formidable');
 const csv_parser = require('csv-parser');
+const pg = require('pg');
 
 const port = 5555;
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+  res.json = (obj, code) => {
+    res.writeHead(code || 400, {'Content-Type': 'application/json'});
+    res.end(JSON.stringify(obj));
+  };
   if (req.method.toLowerCase() === 'post') {
     formidable({
       multiples: true,
@@ -17,13 +22,23 @@ const server = http.createServer((req, res) => {
           .on('end', () => console.log(`DONE, ${c} rows.`))
         }
     }).parse(req, (err, fields, files) => {
+      res.json({err, fields, files}, err ? 400 : 200);
+    });
+  } else if (req.url === '/db') {
+    const db = new pg.Client();
+    db.connect((err, conn) => {
       if (err) {
-        res.writeHead(err.httpCode || 400, { 'Content-Type': 'text/plain' });
-        res.end(String(err));
-        return;
+        res.json({error: 'DB unavailable.'});
+      } else {
+        conn.query('select current_date as date, current_time as time', (err, sql) => {
+          if (err) {
+            res.json({error: 'SQL failed.'});
+          } else {
+            res.json({date: sql.rows[0].date, time: sql.rows[0].time});
+          }
+          conn.end();
+        });
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ fields, files }, null, 2));
     });
   } else {
     res.setHeader('Content-Type', 'text/html');
